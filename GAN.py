@@ -47,7 +47,7 @@ class GAN(object):
             # load mnist 加载数据集
             self.data_X, self.data_y = load_mnist(self.dataset_name)
 
-            # get number of batches for a single epoch 计算每个 epoch 总共需要训练的迭代次数，也是 batch 数量
+            # get number of batches for a single epoch 计算每个 epoch 总共需要训练的迭代次数，也是 batch 数量,此处为70000整除64=1093
             self.num_batches = len(self.data_X) // self.batch_size
         else:
             raise NotImplementedError
@@ -116,7 +116,7 @@ class GAN(object):
 
         """ Graph Input 图输入设置"""
         # images 设置 placeholder 用于图片输入，shape=[64,28,28,1]
-        self.inputs = tf.placeholder(tf.float32, [bs]+image_dims, name='real_images')
+        self.inputs = tf.placeholder(tf.float32, [bs] + image_dims, name='real_images')
 
         # noises 噪声 [64, 62]
         self.z = tf.placeholder(tf.float32, [bs, self.z_dim], name='z')
@@ -132,7 +132,153 @@ class GAN(object):
         # D_fake [64, 1],且数值是在[0,1]范围，D_fake_logits [64, 1024], 没有采用sigmoid激活函数
         D_fake, D_fake_logits, _ = self.discriminator(G, is_training=True, reuse=True)
 
-        # get loss for discriminator 计算判别器的损失函数
+        # get loss for discriminator 计算判别器的损失函数,采用的是交叉熵函数
+        # d_loss_real=log(sigmoid(D_real_logits)) 等价于 d_loss_real= log(D(x))
         d_loss_real = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=D_real_logits, labels=tf.ones_like(D_real))
-        )
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=D_real_logits, labels=tf.ones_like(D_real)))
+        # d_loss_fake = log(sigmoid(D_fake_logits)) 等价于 d_loss_fake=log(D(G(z)))
+        d_loss_fake = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=D_fake_logits, labels=tf.zeros_like(D_fake)))
+
+        self.d_loss = d_loss_real + d_loss_fake
+
+        # get loss for generator 生成器的损失函数
+        # g_loss=-log(sigmoid(D_fake_logits))等价于g_loss=-log(D(G(z))
+        self.g_loss = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=D_fake_logits, labels=tf.ones_like(D_fake)))
+
+        """ Training """
+        # divide trainable variables into a group for D and a group for G
+        # 按照判别器和生成器将训练变量分为两组
+        t_vars = tf.trainable_variables()
+        d_vars = [var for var in t_vars if 'd_' in var.name]
+        g_vars = [var for var in t_vars if 'g_' in var.name]
+
+        # optimizers 优化器用于计算梯度，进行反向传播，更新参数，采用的是 Adam 优化器
+        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+            self.d_optim = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(
+                self.d_loss, var_list=d_vars)
+            # 生成器采用的学习率是判别器的 5 倍
+            self.g_optim = tf.train.AdamOptimizer(self.learning_rate * 5, beta1=self.beta1).minimize(
+                self.g_loss, var_list=g_vars)
+
+        """" Testing """
+        # for test 用于测试, 所有设置 is_training=False, reuse=True
+        self.fake_images = self.generator(self.z, is_training=False, reuse=True)
+
+        """ Summary """
+        # 记录训练中的一些参数，用于在 Tensorboard 中进行观察和可视化
+        d_loss_real_sum = tf.summary.scalar("d_loss_real", d_loss_real)
+        d_loss_fake_sum = tf.summary.scalar("d_loss_fake", d_loss_fake)
+        d_loss_sum = tf.summary.scalar("d_loss", self.d_loss)
+        g_loss_sum = tf.summary.scalar("g_loss", self.g_loss)
+
+        # final summary operations 利用 merge 函数将 summary 的运算都集合在一起
+        self.g_sum = tf.summary.merge([d_loss_fake_sum, g_loss_sum])
+        self.d_sum = tf.summary.merge([d_loss_real_sum, d_loss_sum])
+
+    # 训练模型
+    def train(self):
+
+        # initialize all variables 初始化各个变量
+        tf.global_variables_initializer().run()
+
+        # graph inputs for visualize training results
+        # 创建随机噪声 z，且是从均匀分布为[-1,1]中采样得到，维度是 [64, 62]
+        self.sample_z = np.random.uniform(-1, 1, size=(self.batch_size, self.z_dim))
+
+        # saver to save model 保存训练模型的参数和网络结构
+        self.saver = tf.train.Saver()
+
+        # summary writer 训练记录会保存在 log_dir 文件夹
+        self.writer = tf.summary.FileWriter(self.log_dir + '/' + self.model_name, self.sess.graph)
+
+        # restore check-point if it exits 判断是否需要载入之前训练的模型，恢复之前的训练
+        could_load, checkpoint_counter = self.load(self.checkpoint_dir)
+        if could_load:
+            start_epoch = (int)(checkpoint_counter / self.num_batches)
+            start_batch_id = checkpoint_counter - start_epoch * self.num_batches
+            counter = checkpoint_counter
+            print(" [*] Load SUCCESS")
+        else:
+            start_epoch = 0
+            start_batch_id = 0
+            counter = 1
+            print(" [!] Load failed...")
+
+        # loop for epoch
+        start_time = time.time()
+        for epoch in range(start_epoch, self.epoch):
+
+            # get batch data
+            for idx in range(start_batch_id, self.num_batches):
+                batch_images = self.data_X[idx * self.batch_size:(idx + 1) * self.batch_size]
+                batch_z = np.random.uniform(-1, 1, [self.batch_size, self.z_dim]).astype(np.float32)
+
+        def generate_images(self, model):
+            """generate_images
+            Method to generate samples using a pre-trained model
+            """
+            sess = tf.Session()
+            sess.run(tf.global_variables_initializer())
+            saver = tf.train.Saver()
+            saver.restore(sess, tf.train.latest_checkpoint(model))
+            # todo
+
+        def generate_tsne(self):
+            """generate_tsne
+            Method to visualize TSNE with random samples from the ground truth and
+            generated distribution. This might help in catching mode collapse. If
+            there is an obvious case of mode collapse, then we should see several
+            points from the ground truth without any generated samples nearby.
+            Purely a sanity check.
+
+            """
+            from sklearn.manifold import TSNE
+
+            num_points = 1000
+            # todo
+
+        def visualize_results(self, epoch):
+            tot_num_samples = min(self.sample_num, self.batch_size)
+            image_frame_dim = int(np.floor(np.sqrt(tot_num_samples)))
+
+            """ random condition, random noise """
+
+            z_sample = np.random.uniform(-1, 1, size=(self.batch_size, self.z_dim))
+
+            samples = self.sess.run(self.fake_images, feed_dict={self.z: z_sample})
+
+            save_images(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim],
+                        check_folder(
+                            self.result_dir + '/' + self.model_dir) + '/' + self.model_name + '_epoch%03d' % epoch + '_test_all_classes.png')
+
+        @property
+        def model_dir(self):
+            return "{}_{}_{}_{}".format(
+                self.model_name, self.dataset_name,
+                self.batch_size, self.z_dim)
+
+        def save(self, checkpoint_dir, step):
+            checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir, self.model_name)
+
+            if not os.path.exists(checkpoint_dir):
+                os.makedirs(checkpoint_dir)
+
+            self.saver.save(self.sess, os.path.join(checkpoint_dir, self.model_name + '.model'), global_step=step)
+
+        def load(self, checkpoint_dir):
+            import re
+            print(" [*] Reading checkpoints...")
+            checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir, self.model_name)
+
+            ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+            if ckpt and ckpt.model_checkpoint_path:
+                ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+                self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
+                counter = int(next(re.finditer("(\d+)(?!.*\d)", ckpt_name)).group(0))
+                print(" [*] Success to read {}".format(ckpt_name))
+                return True, counter
+            else:
+                print(" [*] Failed to find a checkpoint")
+                return False, 0
