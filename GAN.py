@@ -10,6 +10,8 @@ import os
 import time
 import tensorflow as tf
 import numpy as np
+from datetime import datetime
+from datetime import timedelta
 
 from ops import *
 from utils import *
@@ -215,70 +217,114 @@ class GAN(object):
                 batch_images = self.data_X[idx * self.batch_size:(idx + 1) * self.batch_size]
                 batch_z = np.random.uniform(-1, 1, [self.batch_size, self.z_dim]).astype(np.float32)
 
-        def generate_images(self, model):
-            """generate_images
-            Method to generate samples using a pre-trained model
-            """
-            sess = tf.Session()
-            sess.run(tf.global_variables_initializer())
-            saver = tf.train.Saver()
-            saver.restore(sess, tf.train.latest_checkpoint(model))
-            # todo
+                # update D network 将数据输入 D 网络，更新梯度，并更新 tensorboard 观察和可视化的内容，注意需要输入图片和噪声
+                _, summary_str, d_loss = self.sess.run([self.d_optim, self.d_sum, self.d_loss],
+                                                       feed_dict={self.inputs: batch_images, self.z: batch_z})
+                self.writer.add_summary(summary_str, counter)
 
-        def generate_tsne(self):
-            """generate_tsne
-            Method to visualize TSNE with random samples from the ground truth and
-            generated distribution. This might help in catching mode collapse. If
-            there is an obvious case of mode collapse, then we should see several
-            points from the ground truth without any generated samples nearby.
-            Purely a sanity check.
+                # update G network 将数据输入 G 网络，更新梯度，并更新 tensorboard 观察和可视化的内容，注意需要输入噪声
+                _, summary_str, g_loss = self.sess.run([self.g_optim, self.g_sum, self.g_loss],
+                                                       feed_dict={self.z: batch_z})
+                self.writer.add_summary(summary_str, counter)
 
-            """
-            from sklearn.manifold import TSNE
+                # display training status 输出训练的状态，包括当前训练迭代次数、训练时间、G 和 D 网络的 loss
+                counter += 1
+                # 设置每 100 次输出一次
+                if np.mod(counter, 100) == 0:
+                    # 计算当前训练耗时
+                    elapsed = time.time() - start_time
+                    elapsed = str(timedelta(seconds=elapsed))
+                    print("%s Eplased: [%s], Epoch: [%2d] [%4d/%4d], d_loss: %.8f, g_loss: %.8f"
+                          % (datetime.now(), elapsed, epoch, idx, self.num_batches, d_loss, g_loss))
 
-            num_points = 1000
-            # todo
+                # save training results for every 300 steps 设置每 300 次迭代保存训练结果
+                if np.mod(counter, 300) == 0:
+                    samples = self.sess.run(self.fake_images, feed_dict={self.z: self.sample_z})
+                    # 此处计算生成图片的小框图片的排布，本处为8×8排布
+                    tot_num_samples = min(self.sample_num, self.batch_size)
+                    manifold_h = int(np.floor(np.sqrt(tot_num_samples)))
+                    manifold_w = int(np.floor(np.sqrt(tot_num_samples)))
+                    save_images(samples[:manifold_h * manifold_w, :, :, :], [manifold_h, manifold_w],
+                                './' + check_folder(self.result_dir + '/' + self.model_dir) + '/' + self.model_name +
+                                '_train_{:02d}_{:04d}.png'.format(epoch, idx))
+            # After an epoch, start_batch_id is set to zero
+            # non-zero value is only for the first epoch after loading pre-trained model
+            # 每训练一次 epoch 后，需要重置 start_batch_id 为 0，start_batch_id 只有在加载预训练模型的时候才是非 0 值
+            start_batch_id = 0
 
-        def visualize_results(self, epoch):
-            tot_num_samples = min(self.sample_num, self.batch_size)
-            image_frame_dim = int(np.floor(np.sqrt(tot_num_samples)))
+            # save model
+            self.save(self.checkpoint_dir, counter)
 
-            """ random condition, random noise """
+            # show temporal results
+            self.visualize_results(epoch)
 
-            z_sample = np.random.uniform(-1, 1, size=(self.batch_size, self.z_dim))
+        # save model for final step 保存最后一次训练的模型参数
+        self.save(self.checkpoint_dir, counter)
 
-            samples = self.sess.run(self.fake_images, feed_dict={self.z: z_sample})
+    def generate_images(self, model):
+        """generate_images
+        Method to generate samples using a pre-trained model
+        """
+        sess = tf.Session()
+        sess.run(tf.global_variables_initializer())
+        saver = tf.train.Saver()
+        saver.restore(sess, tf.train.latest_checkpoint(model))
+        # todo
 
-            save_images(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim],
-                        check_folder(
-                            self.result_dir + '/' + self.model_dir) + '/' + self.model_name + '_epoch%03d' % epoch + '_test_all_classes.png')
+    def generate_tsne(self):
+        """generate_tsne
+        Method to visualize TSNE with random samples from the ground truth and
+        generated distribution. This might help in catching mode collapse. If
+        there is an obvious case of mode collapse, then we should see several
+        points from the ground truth without any generated samples nearby.
+        Purely a sanity check.
 
-        @property
-        def model_dir(self):
-            return "{}_{}_{}_{}".format(
-                self.model_name, self.dataset_name,
-                self.batch_size, self.z_dim)
+        """
+        from sklearn.manifold import TSNE
+        num_points = 1000
+        # todo
+        pass
 
-        def save(self, checkpoint_dir, step):
-            checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir, self.model_name)
+    def visualize_results(self, epoch):
+        tot_num_samples = min(self.sample_num, self.batch_size)
+        image_frame_dim = int(np.floor(np.sqrt(tot_num_samples)))
 
-            if not os.path.exists(checkpoint_dir):
-                os.makedirs(checkpoint_dir)
+        """ random condition, random noise """
 
-            self.saver.save(self.sess, os.path.join(checkpoint_dir, self.model_name + '.model'), global_step=step)
+        z_sample = np.random.uniform(-1, 1, size=(self.batch_size, self.z_dim))
 
-        def load(self, checkpoint_dir):
-            import re
-            print(" [*] Reading checkpoints...")
-            checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir, self.model_name)
+        samples = self.sess.run(self.fake_images, feed_dict={self.z: z_sample})
 
-            ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-            if ckpt and ckpt.model_checkpoint_path:
-                ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
-                self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
-                counter = int(next(re.finditer("(\d+)(?!.*\d)", ckpt_name)).group(0))
-                print(" [*] Success to read {}".format(ckpt_name))
-                return True, counter
-            else:
-                print(" [*] Failed to find a checkpoint")
-                return False, 0
+        save_images(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim],
+                    check_folder(
+                        self.result_dir + '/' + self.model_dir) + '/' + self.model_name + '_epoch%03d' % epoch + '_test_all_classes.png')
+
+    @property
+    def model_dir(self):
+        return "{}_{}_{}_{}".format(
+            self.model_name, self.dataset_name,
+            self.batch_size, self.z_dim)
+
+    def save(self, checkpoint_dir, step):
+        checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir, self.model_name)
+
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
+
+        self.saver.save(self.sess, os.path.join(checkpoint_dir, self.model_name + '.model'), global_step=step)
+
+    def load(self, checkpoint_dir):
+        import re
+        print(" [*] Reading checkpoints...")
+        checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir, self.model_name)
+
+        ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+        if ckpt and ckpt.model_checkpoint_path:
+            ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+            self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
+            counter = int(next(re.finditer("(\d+)(?!.*\d)", ckpt_name)).group(0))
+            print(" [*] Success to read {}".format(ckpt_name))
+            return True, counter
+        else:
+            print(" [*] Failed to find a checkpoint")
+            return False, 0
