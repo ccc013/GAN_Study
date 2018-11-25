@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*-coding:utf-8 -*-
 """
-
 GAN model
 Code from https://github.com/hwalsuklee/tensorflow-generative-model-collections/blob/master/GAN.py
 """
