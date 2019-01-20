@@ -58,11 +58,25 @@
 
 ### Super-Resolution
 
+- (ECCV 2018)ESRGAN: Enhanced Super-Resolution Generative Adversarial Networks[[paper]](https://arxiv.org/abs/1809.00219)[[code]](https://github.com/xinntao/ESRGAN)
+
+
+相关介绍文章：
+
+- [效果惊人：上古卷轴III等经典游戏也能使用超分辨率GAN重制了](https://mp.weixin.qq.com/s/eJkkbGBYxWlngkT5gjjW7g)
+- [让画面更逼真！这个强化超分辨率GAN让老游戏迎来第二春 | 代码+论文+游戏MOD](https://mp.weixin.qq.com/s/kobEEizpP2v5Yy-8stiGgg)
+- [如何在Windows上运行ESRGAN](https://kingdomakrillic.tumblr.com/post/178254875891/i-figured-out-how-to-get-esrgan-and-sftgan)
+
 
 ### Inpainting
 
 - [ ] Generative Image Inpainting with Contextual Attention[[Paper]](https://arxiv.org/abs/1801.07892)[[code]](https://github.com/JiahuiYu/generative_inpainting)
+- [ ] EdgeConnect: Generative Image Inpainting with Adversarial Edge Learning[[Paper]](https://arxiv.org/abs/1901.00212)[[Code]](https://github.com/knazeri/edge-connect)[[介绍]](https://mp.weixin.qq.com/s/F8o_zBBvuWyW90uyP5bLvQ)
 
+#### Project
+
+- [动漫人物图片自动修复，去马赛克，填补，去瑕疵](https://github.com/youyuge34/Anime-InPainting)--基于 EdgeConnect 这篇论文的基础
+- Painting Outside the Box: Image Outpainting[[Paper]](https://cs230.stanford.edu/projects_spring_2018/posters/8265861.pdf)[[Code]](https://github.com/bendangnuksung/Image-OutPainting)[[介绍]](https://zhuanlan.zhihu.com/p/40902853)--吴恩达斯坦福 CS230 课程期末作业第一名：图像超级补全效果惊艳
 
 
 ### 工具
@@ -74,10 +88,11 @@
 
 #### Github
 
-1. [tensorflow-generative-model-collections](https://github.com/hwalsuklee/tensorflow-generative-model-collections)
+1. 复现多种 GANs 模型[[Tensorflow-version]](https://github.com/hwalsuklee/tensorflow-generative-model-collections)[[Pytorch]](https://github.com/eriklindernoren/PyTorch-GAN)[[Keras]](https://github.com/eriklindernoren/Keras-GAN)
 2. [tensorflow-GANs](https://github.com/TwistedW/tensorflow-GANs)--结合了多种现在的GAN代码，部分有中文注释的Github
 3. [AdversarialNetsPapers](https://github.com/zhangqianhui/AdversarialNetsPapers)--及时更新，而且对论文进行分类
 4. [The-gan-zoo](https://github.com/hindupuravinash/the-gan-zoo)
+
 
 #### 文章
 
